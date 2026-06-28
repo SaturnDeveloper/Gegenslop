@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Gegenslop — Bildschutz gegen KI-Training</title>
+<style>
+  :root{
+    --ink:#0d1210;
+    --paper:#eef0e8;
+    --line:#3a4a3f;
+    --signal:#c6ff5e;
+    --signal-dim:#8fae4a;
+    --rust:#d96b3d;
+    --panel:#141a16;
+    --panel2:#1b2219;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--ink);color:var(--paper);font-family:'Courier New',ui-monospace,monospace;}
+  body{min-height:100vh;}
+
+  .topbar{
+    display:flex;justify-content:space-between;align-items:baseline;
+    padding:28px 40px 18px;border-bottom:1px solid var(--line);
+  }
+  .brand{font-size:20px;letter-spacing:.04em;font-weight:700;color:var(--signal);}
+  .brand span{color:var(--paper);}
+  .tag{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#7c8a7c;}
+
+  .layout{display:grid;grid-template-columns:340px 1fr;gap:0;min-height:calc(100vh - 80px);}
+  @media (max-width:900px){.layout{grid-template-columns:1fr;}}
+
+  .controls{
+    border-right:1px solid var(--line);
+    padding:28px 28px 60px;
+    background:var(--panel);
+  }
+  @media (max-width:900px){.controls{border-right:none;border-bottom:1px solid var(--line);}}
+
+  .upload{
+    border:1px dashed var(--line);
+    padding:22px 16px;text-align:center;cursor:pointer;
+    font-size:12px;letter-spacing:.06em;color:#a9b6a4;
+    transition:border-color .15s,color .15s;
+    margin-bottom:28px;
+  }
+  .upload:hover{border-color:var(--signal-dim);color:var(--signal);}
+  .upload input{display:none;}
+
+  .section{margin-bottom:30px;}
+  .section h3{
+    font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--signal);margin:0 0 4px;
+    display:flex;align-items:center;gap:8px;
+  }
+  .section h3::before{content:attr(data-n);color:var(--rust);font-weight:700;}
+  .section p.desc{font-size:11.5px;color:#8a978a;line-height:1.5;margin:0 0 12px;}
+
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .switch{
+    position:relative;width:38px;height:20px;background:#2a332b;border:1px solid var(--line);
+    cursor:pointer;flex:none;
+  }
+  .switch::after{
+    content:'';position:absolute;top:1px;left:1px;width:16px;height:16px;background:#697566;
+    transition:transform .15s,background .15s;
+  }
+  .switch.on{background:#23301f;border-color:var(--signal-dim);}
+  .switch.on::after{transform:translateX(18px);background:var(--signal);}
+
+  label.field{display:block;font-size:11px;color:#9fab99;margin:10px 0 4px;}
+  input[type=range]{
+    width:100%;-webkit-appearance:none;height:2px;background:var(--line);outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:11px;height:11px;background:var(--signal);cursor:pointer;border-radius:0;
+  }
+  .val{float:right;color:var(--signal-dim);font-size:11px;}
+
+  select, input[type=text]{
+    width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--paper);
+    padding:7px 8px;font-family:inherit;font-size:12px;
+  }
+
+  .runbar{
+    position:sticky;bottom:0;background:var(--panel);padding-top:18px;border-top:1px solid var(--line);
+  }
+  button{
+    width:100%;padding:13px;background:var(--signal);color:#0d1210;border:none;
+    font-family:inherit;font-weight:700;letter-spacing:.06em;font-size:12.5px;
+    text-transform:uppercase;cursor:pointer;transition:background .15s;
+  }
+  button:hover{background:#dfffa0;}
+  button.secondary{background:transparent;border:1px solid var(--line);color:var(--paper);margin-top:8px;}
+  button.secondary:hover{border-color:var(--signal-dim);color:var(--signal);}
+  button:disabled{opacity:.35;cursor:not-allowed;}
+
+  .stage{padding:28px 40px;display:flex;flex-direction:column;gap:18px;}
+  .empty{
+    flex:1;display:flex;align-items:center;justify-content:center;
+    color:#5a665a;font-size:12px;letter-spacing:.06em;text-align:center;border:1px dashed var(--line);
+    min-height:50vh;
+  }
+  .compare{
+    display:grid;grid-template-columns:1fr 1fr;gap:18px;
+  }
+  @media (max-width:700px){.compare{grid-template-columns:1fr;}}
+  .frame{border:1px solid var(--line);background:var(--panel);padding:10px;}
+  .frame .label{font-size:10.5px;letter-spacing:.12em;color:#8a978a;text-transform:uppercase;margin-bottom:8px;display:flex;justify-content:space-between;}
+  .frame canvas{width:100%;height:auto;display:block;background:#000;}
+
+  .readout{
+    display:flex;gap:24px;flex-wrap:wrap;font-size:11px;color:#8a978a;
+    border-top:1px solid var(--line);padding-top:14px;
+  }
+  .readout b{color:var(--signal-dim);}
+  .readout .hot{color:var(--rust);}
+
+  .diff-link{font-size:10.5px;color:var(--signal-dim);cursor:pointer;text-decoration:underline;}
+
+  footer.note{
+    font-size:10.5px;color:#5a665a;line-height:1.6;padding:18px 40px 40px;border-top:1px solid var(--line);
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">GEGEN<span>SLOP</span></div>
+  <div class="tag">Bildschutz vor KI-Scraping &amp; Modelltraining</div>
+</div>
+
+<div class="layout">
+  <div class="controls">
+    <label class="upload" id="uploadBox">
+      Bild hierher ziehen oder klicken zum Hochladen
+      <input type="file" id="fileInput" accept="image/*">
+    </label>
+
+    <div class="section">
+      <h3 data-n="01">Adversarial Perturbation</h3>
+      <p class="desc">Feines, strukturiertes Pixelrauschen, das für Menschen kaum sichtbar ist, aber Klassifikator-Gradienten in eine falsche Richtung lenkt.</p>
+      <div class="toggle-row">
+        <span style="font-size:12px;">Aktiv</span>
+        <div class="switch on" data-toggle="perturb"></div>
+      </div>
+      <label class="field">Stärke (ε) <span class="val" id="vPerturb">10</span></label>
+      <input type="range" id="perturbStrength" min="1" max="30" value="10">
+      <label class="field">Muster</label>
+      <select id="perturbPattern">
+        <option value="freq">Hochfrequenz (FGSM-artig)</option>
+        <option value="grad">Gradientenfeld</option>
+        <option value="block">Block-Rauschen</option>
+      </select>
+    </div>
+
+    <div class="section">
+      <h3 data-n="02">Feature-Level Poisoning</h3>
+      <p class="desc">Verschiebt lokale Farb- und Kantenmerkmale in kleinen Kacheln, sodass Feature-Extraktoren verzerrte Embeddings lernen — visuell kaum wahrnehmbar.</p>
+      <div class="toggle-row">
+        <span style="font-size:12px;">Aktiv</span>
+        <div class="switch on" data-toggle="poison"></div>
+      </div>
+      <label class="field">Kachelgröße <span class="val" id="vTile">16</span> px</label>
+      <input type="range" id="poisonTile" min="4" max="48" value="16">
+      <label class="field">Intensität <span class="val" id="vPoison">8</span></label>
+      <input type="range" id="poisonStrength" min="1" max="25" value="8">
+    </div>
+
+    <div class="section">
+      <h3 data-n="03">Adversarial Watermarking</h3>
+      <p class="desc">Unsichtbares, sich wiederholendes Phasenmuster über das gesamte Bild — schwer zu entfernen, ohne das Bild merklich zu degradieren.</p>
+      <div class="toggle-row">
+        <span style="font-size:12px;">Aktiv</span>
+        <div class="switch on" data-toggle="watermark"></div>
+      </div>
+      <label class="field">Dichte <span class="val" id="vWmDensity">6</span></label>
+      <input type="range" id="wmDensity" min="2" max="20" value="6">
+      <label class="field">Stärke <span class="val" id="vWmStrength">7</span></label>
+      <input type="range" id="wmStrength" min="1" max="20" value="7">
+      <label class="field">Saatwert / Signatur</label>
+      <input type="text" id="wmSeed" value="GEGENLICHT" placeholder="z. B. dein Künstlername">
+    </div>
+
+    <div class="runbar">
+      <button id="applyBtn" disabled>Schutz anwenden</button>
+      <button class="secondary" id="downloadBtn" disabled>Geschütztes Bild speichern</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="empty" id="emptyState">Noch kein Bild geladen.<br>Lade ein Bild, um die Schutzfilter zu testen.</div>
+
+    <div class="compare" id="compareView" style="display:none;">
+      <div class="frame">
+        <div class="label"><span>Original</span></div>
+        <canvas id="origCanvas"></canvas>
+      </div>
+      <div class="frame">
+        <div class="label"><span>Geschützt</span><span class="diff-link" id="diffToggle">Differenz x8 anzeigen</span></div>
+        <canvas id="outCanvas"></canvas>
+      </div>
+    </div>
+
+    <div class="readout" id="readout" style="display:none;">
+      <span>Auflösung: <b id="rRes">—</b></span>
+      <span>Ø Pixelabweichung: <b id="rDelta">—</b></span>
+      <span>Maximale Abweichung: <b id="rMax">—</b></span>
+      <span class="hot">Hinweis: kein Schutz ist absolut — Filter erhöhen die Kosten für Scraping/Training, garantieren aber keine vollständige Unangreifbarkeit.</span>
+    </div>
+  </div>
+</div>
+
+<footer class="note">
+  Alles passiert lokal im Browser per Canvas — es wird nichts hochgeladen oder gespeichert. Die drei Filter sind heuristische Annäherungen an publizierte Schutzansätze (z. B. Glaze/Nightshade-artige Konzepte), kein Ersatz für eine geprüfte wissenschaftliche Implementierung.
+</footer>
+
+<script>
+const fileInput = document.getElementById('fileInput');
+const uploadBox = document.getElementById('uploadBox');
+const emptyState = document.getElementById('emptyState');
+const compareView = document.getElementById('compareView');
+const readout = document.getElementById('readout');
+const origCanvas = document.getElementById('origCanvas');
+const outCanvas = document.getElementById('outCanvas');
+const applyBtn = document.getElementById('applyBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const diffToggle = document.getElementById('diffToggle');
+
+let img = null;
+let showingDiff = false;
+let lastOutData = null;
+let lastOrigData = null;
+
+const toggles = {perturb:true, poison:true, watermark:true};
+document.querySelectorAll('.switch').forEach(sw=>{
+  sw.addEventListener('click', ()=>{
+    sw.classList.toggle('on');
+    toggles[sw.dataset.toggle] = sw.classList.contains('on');
+  });
+});
+
+const sliders = [
+  ['perturbStrength','vPerturb'],['poisonTile','vTile'],['poisonStrength','vPoison'],
+  ['wmDensity','vWmDensity'],['wmStrength','vWmStrength']
+];
+sliders.forEach(([id,vid])=>{
+  const el = document.getElementById(id);
+  const v = document.getElementById(vid);
+  el.addEventListener('input', ()=> v.textContent = el.value);
+});
+
+uploadBox.addEventListener('click', e=>{ if(e.target!==fileInput) fileInput.click(); });
+fileInput.addEventListener('change', e=>{
+  if(e.target.files[0]) loadImage(e.target.files[0]);
+});
+uploadBox.addEventListener('dragover', e=>{ e.preventDefault(); uploadBox.style.borderColor='#c6ff5e'; });
+uploadBox.addEventListener('dragleave', ()=>{ uploadBox.style.borderColor=''; });
+uploadBox.addEventListener('drop', e=>{
+  e.preventDefault(); uploadBox.style.borderColor='';
+  if(e.dataTransfer.files[0]) loadImage(e.dataTransfer.files[0]);
+});
+
+function loadImage(file){
+  if(!file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = ev=>{
+    const im = new Image();
+    im.onload = ()=>{
+      img = im;
+      const MAXW = 900;
+      let w = im.width, h = im.height;
+      if(w > MAXW){ h = Math.round(h * MAXW/w); w = MAXW; }
+      [origCanvas, outCanvas].forEach(c=>{ c.width=w; c.height=h; });
+      const octx = origCanvas.getContext('2d');
+      octx.drawImage(im,0,0,w,h);
+      outCanvas.getContext('2d').drawImage(im,0,0,w,h);
+      lastOrigData = octx.getImageData(0,0,w,h);
+      emptyState.style.display='none';
+      compareView.style.display='grid';
+      readout.style.display='flex';
+      document.getElementById('rRes').textContent = w+' × '+h;
+      applyBtn.disabled = false;
+      downloadBtn.disabled = true;
+    };
+    im.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function seedRand(str){
+  let h = 1779033703 ^ str.length;
+  for(let i=0;i<str.length;i++){
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = h<<13 | h>>>19;
+  }
+  return function(){
+    h = Math.imul(h ^ h>>>16, 2246822507);
+    h = Math.imul(h ^ h>>>13, 3266489909);
+    h ^= h>>>16;
+    return (h>>>0) / 4294967296;
+  };
+}
+
+applyBtn.addEventListener('click', applyProtection);
+
+function applyProtection(){
+  const w = origCanvas.width, h = origCanvas.height;
+  const src = lastOrigData;
+  const out = new Uint8ClampedArray(src.data);
+
+  // --- 1. Feature-level poisoning: per-tile color/edge shift ---
+  if(toggles.poison){
+    const tile = parseInt(document.getElementById('poisonTile').value,10);
+    const strength = parseInt(document.getElementById('poisonStrength').value,10);
+    const rnd = seedRand('poison'+tile+strength);
+    for(let ty=0; ty<h; ty+=tile){
+      for(let tx=0; tx<w; tx+=tile){
+        const dr = (rnd()-0.5)*2*strength;
+        const dg = (rnd()-0.5)*2*strength;
+        const db = (rnd()-0.5)*2*strength;
+        const swap = rnd() < 0.5;
+        for(let y=ty; y<Math.min(ty+tile,h); y++){
+          for(let x=tx; x<Math.min(tx+tile,w); x++){
+            let i = (y*w+x)*4;
+            out[i]   = out[i]   + dr;
+            out[i+1] = out[i+1] + dg;
+            out[i+2] = out[i+2] + db;
+            if(swap){
+              // subtle local edge scramble: blend with neighbor
+              const nx = Math.min(x+1,w-1);
+              let j = (y*w+nx)*4;
+              out[i]   = out[i]*0.85 + src.data[j]*0.15;
+              out[i+1] = out[i+1]*0.85 + src.data[j+1]*0.15;
+              out[i+2] = out[i+2]*0.85 + src.data[j+2]*0.15;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // --- 2. Adversarial perturbation: structured high-frequency noise ---
+  if(toggles.perturb){
+    const eps = parseInt(document.getElementById('perturbStrength').value,10);
+    const pattern = document.getElementById('perturbPattern').value;
+    const rnd = seedRand('perturb'+eps+pattern);
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        let n;
+        if(pattern==='freq'){
+          n = Math.sin(x*1.7)*Math.cos(y*1.9)*eps*0.5 + (rnd()-0.5)*eps;
+        } else if(pattern==='grad'){
+          n = ((x+y)%7 - 3)*eps*0.3 + (rnd()-0.5)*eps*0.4;
+        } else {
+          const bx = Math.floor(x/3), by = Math.floor(y/3);
+          n = (((bx*31+by*17)%11)-5) * eps*0.3;
+        }
+        let i = (y*w+x)*4;
+        out[i]   += n;
+        out[i+1] += -n*0.6;
+        out[i+2] += n*0.8;
+      }
+    }
+  }
+
+  // --- 3. Adversarial watermark: repeating phase pattern ---
+  if(toggles.watermark){
+    const density = parseInt(document.getElementById('wmDensity').value,10);
+    const strength = parseInt(document.getElementById('wmStrength').value,10);
+    const seedStr = document.getElementById('wmSeed').value || 'GEGENLICHT';
+    let seedNum = 0;
+    for(let i=0;i<seedStr.length;i++) seedNum += seedStr.charCodeAt(i)*(i+1);
+    const fx = (density + (seedNum%5)) * 0.05;
+    const fy = (density + (seedNum%7)) * 0.05;
+    const phase = (seedNum%628)/100;
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        const wmark = Math.sin(x*fx + phase)*Math.sin(y*fy + phase) * strength;
+        let i = (y*w+x)*4;
+        out[i]   += wmark;
+        out[i+1] += wmark;
+        out[i+2] += wmark;
+      }
+    }
+  }
+
+  const outImgData = new ImageData(out, w, h);
+  outCanvas.getContext('2d').putImageData(outImgData, 0, 0);
+  lastOutData = outImgData;
+
+  // readout stats
+  let sum=0, max=0, n=src.data.length;
+  for(let i=0;i<n;i+=4){
+    for(let c=0;c<3;c++){
+      const d = Math.abs(src.data[i+c]-out[i+c]);
+      sum += d; if(d>max) max=d;
+    }
+  }
+  document.getElementById('rDelta').textContent = (sum/(n*0.75/4*3)).toFixed(2);
+  document.getElementById('rMax').textContent = max.toFixed(0);
+
+  downloadBtn.disabled = false;
+  showingDiff = false;
+  diffToggle.textContent = 'Differenz x8 anzeigen';
+}
+
+diffToggle.addEventListener('click', ()=>{
+  if(!lastOutData) return;
+  showingDiff = !showingDiff;
+  const w = outCanvas.width, h = outCanvas.height;
+  if(showingDiff){
+    const diff = new Uint8ClampedArray(lastOutData.data.length);
+    for(let i=0;i<diff.length;i+=4){
+      diff[i]   = Math.abs(lastOrigData.data[i]-lastOutData.data[i])*8;
+      diff[i+1] = Math.abs(lastOrigData.data[i+1]-lastOutData.data[i+1])*8;
+      diff[i+2] = Math.abs(lastOrigData.data[i+2]-lastOutData.data[i+2])*8;
+      diff[i+3] = 255;
+    }
+    outCanvas.getContext('2d').putImageData(new ImageData(diff,w,h),0,0);
+    diffToggle.textContent = 'Geschütztes Bild anzeigen';
+  } else {
+    outCanvas.getContext('2d').putImageData(lastOutData,0,0);
+    diffToggle.textContent = 'Differenz x8 anzeigen';
+  }
+});
+
+downloadBtn.addEventListener('click', ()=>{
+  if(showingDiff){ outCanvas.getContext('2d').putImageData(lastOutData,0,0); showingDiff=false; diffToggle.textContent='Differenz x8 anzeigen'; }
+  const link = document.createElement('a');
+  link.download = 'geschuetzt.png';
+  link.href = outCanvas.toDataURL('image/png');
+  link.click();
+});
+</script>
+
+</body>
+</html>
